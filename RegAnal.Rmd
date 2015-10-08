@@ -1,0 +1,203 @@
+---
+title: "Motor Trends"
+author: "Nikhil Singhal"
+date: "September 27, 2015"
+output:
+  word_document: default
+  html_document:
+    toc: yes
+    toc_depth: 3
+---
+# Article  
+
+This month in Motor Trend, we have been following the mountain cars racing all over the bumps. While we were following the several racing events organized all over the country, many racing enthusiasts around us were pondering on what the mileage for these cars would be (for lesser pit stops) and what to tweak in the cars to get the most out of them.
+
+So we collected information about all the mountain cars whizzing by in the event and have used it to answer our reader's questions. We collected information about:
+
+* Engine: _Cylinders_, _Engine Displacement_, _Horse Power_
+* Chassis & Performance: _Weight_, _Rear Axle Ratio_, _1/4 Mile Time_
+* Components: _V/S_, _Automatic Transmission_, _Gears_, _Carburetors_
+
+There was a certain belief going on in the tracks that since manual transmissions give more control to the driver, which they leverage to extract more power at lower gears hence reducing the mileage. We found that although type of transmission IS a factor in mileage, but that isn't alone in effecting it. Mileage also depends on the cylinders, horespower, weight and the time it takes for the car to cover 1/4 mile.
+
+We did the calculations on the data we collected and did find that belief to be true. The automatics did give an average of about 2.8 mpg (95% sure) more than the manuals.
+
+Overall, An average Manual is better than almost only 2% of the AM cars in terms of mileage.
+
+<center>_(Page 1)_</center>
+
+****
+
+# Appendix
+```{r, results='hide', echo=FALSE}
+library(data.table)
+library(leaps)
+library(ggplot2)
+library(knitr)
+library(gridExtra)
+
+data("mtcars")
+
+# Formatting mtcars dataset
+mtcars <- as.data.table(mtcars)
+mtcars[, `:=`(cyl = factor(cyl),
+              vs = factor(vs),
+              am = factor(am),
+              gear = factor(gear),
+              carb = factor(carb)
+)]
+
+# Exhaustive search for variables
+regfit.full <- regsubsets(mpg ~ ., data = mtcars, nbest = 2, nvmax = 16, method = "exhaustive")
+regfit.summary <- summary(regfit.full)
+```
+
+## Explorartory Data Analysis
+![Pair Wise Graph](/Users/Nikhil/mtcar.png)
+
+__General Observations:__  
+
+* The automatic transmission engines tend to have smaller engines.
+* The automatic transmission engines tend to have higher mileages.
+* Lesser no. of cylinders means more mileage.
+* Lesser no. of cylinders also means lower displacement and qsec times.
+
+## Model Selection
+```{r kable, echo=FALSE}
+kable(regfit.summary$outmat)
+```
+
+<center>_(Page 2)_</center>
+
+****
+
+## Analysis
+```{r echo=FALSE, warning=FALSE, fig.height=6}
+# Plotting adjusted R^2 for the results, percentage of variation explained
+adjusted.R2 <- data.table(variables = rep(x = 1:16, each = 2, length.out = 31), R2 = regfit.summary$adjr2)
+r2 <- ggplot(data = adjusted.R2, aes(x = variables, y = R2)) +
+    geom_point() +
+    geom_line(data = adjusted.R2[, .SD[1], by = .(variables)], aes(colour = "red")) +
+    ylab("Adjusted R2") + ggtitle("ADJ. R2 plot for variables")
+
+# Constructing Mallows cp table and plotting the data using ggplot2
+mallow.cp <- data.table(variables = rep(x = 1:16, each = 2, length.out = 31), cp = regfit.summary$cp)
+cp <- ggplot(data = mallow.cp, aes(x = variables, y = cp)) + 
+    geom_point() + 
+    geom_line(data = mallow.cp[,.SD[1],by = .(variables)], aes(colour = "red")) +
+    ylab("Mallow's CP") + ggtitle("CP plot for variables")
+grid.arrange(cp, r2, ncol = 2, heights = c(5, 5))
+```
+
+__Interpretation:__  
+
+* In the Mallow's CP graph, the models with 3-5 regressor variables are the ones which have the least values. Hence, these are the models which are the most precise.
+
+* In the adjusted R^2 graph, the models with the 4-6 regressor variables are the ones which explain the most amount of variation. The 5 variable model is the one with the highest variance explanation.
+
+* In the Model Selection table, two best models for a particular number of variables have been displayed. And in both the graphs for 5 variable model, the readings coincide indicating that both the models can be used. (Going with model 5(2))
+
+## MultiVariable Regression
+
+```{r echo=FALSE}
+data(mtcars)
+model.fit <- lm(mpg ~ factor(cyl) + hp + wt + qsec + factor(am), data = mtcars)
+model.summary <- summary(model.fit)
+model.summary$coefficients
+```
+
+__Interpretation:__  
+
+* The intercept term is for the cars having 4 cylinders, manual transmission and 3 gears.
+* If the cylinders are increased to 6, the mileage reduces by 1.9 mpg but if it is increased to 8, the reduction is only by 0.2 mpg.
+* And so on.
+
+```{r echo=FALSE}
+data(mtcars)
+base.model.fit <- lm(mpg ~ factor(am), data = mtcars)
+base.model.summary <- summary(base.model.fit)
+base.model.summary$coefficients
+```
+
+__Interpretation:__  
+
+* The coeffecients point out what was observed in the exploratory data analysis, reiterating, the cars with automatic transmission give higher mileage.
+
+```{r echo=FALSE}
+anova(model.fit, base.model.fit)
+```
+
+
+__Interpretation:__
+
+* The F statistic is quite large and the _p-value_ is extremely low for our simple Model 2, which indicates that our Model 1 is correct.
+<center>_(Page 3)_</center>
+
+****
+
+## Residuals & Diagnostics
+
+```{r echo=FALSE, fig.height=5}
+rp <- ggplot(data = model.fit, aes(x = .fitted, y = .resid)) + 
+    geom_point() + geom_smooth() +
+    geom_hline(colour = "red", yintercept = 0) +
+    ylab("Residuals") + xlab("Fitted Values") + ggtitle("Residual plot")
+
+qq <- ggplot(data = model.fit, aes(x = qqnorm(.stdresid)[[1]], y = .stdresid)) +
+    geom_point(na.rm = TRUE) + 
+    geom_abline(aes(qqline(.stdresid))) +
+    xlab("Theoretical Quantiles") + ylab("Standardized Residuals") + ggtitle("QQ plot")
+
+sr <- ggplot(data = model.fit, aes(.fitted, sqrt(abs(.stdresid)))) +
+    geom_point(na.rm=TRUE) + geom_smooth(method="loess", na.rm = TRUE) +
+    xlab("Fitted Value") + ylab("Standardized residuals") +
+    ggtitle("Scale-Location")
+grid.arrange(rp, qq, sr, ncol = 3, heights = c(5, 5))
+```
+
+__Interpretation:__  
+
+* The residual plot shows a near horizontal spread of residues showing a good fit of the regression model.
+
+* The qq-plot shows that the errors are normally distributed.  
+
+
+The cars which have the most leverage on the regression line are (using hatvalues):
+
+```{r, echo=FALSE}
+kable(tail(sort(hatvalues(model.fit)),4))
+```
+
+## Effect Size
+
+```{r echo=FALSE}
+data(mtcars)
+mtcars <- as.data.table(mtcars)
+
+# TM: Manual & AM: Automatic
+mean.TM <- mtcars[am == 0, mean(mpg)]
+mean.AM <- mtcars[am == 1, mean(mpg)]
+
+no.TM <- length(mtcars[am == 0]) - 1
+no.AM <- length(mtcars[am == 1]) - 1
+
+sd.TM <- sd(mtcars[am == 0, mpg]) ^ 2
+sd.AM <- sd(mtcars[am == 1, mpg]) ^ 2
+
+SD.pooled <- sqrt((no.TM * sd.TM + no.AM * sd.AM)/(no.TM + no.AM))
+
+effect.size <- (mean.TM - mean.AM)/SD.pooled
+es.conf.int <- ((no.AM + no.TM + 2)/((no.AM + 1)*(no.TM + 1)) + (effect.size^2)/2*(no.AM + no.TM + 2)) ^ 0.5
+
+paste("Effect Size: ", round(effect.size, 2), sep = " ")
+paste("Conf Int: ", round(es.conf.int, 2), sep = " ")
+```
+
+__Interpretation:__  
+
+* The effect size is exactly equivalent to a z-score of N(0, 1) distribution.
+
+* The value of the effect size means that an average car in the TM group, gives a mileage equivalent to an AM car which is -1.49 SD away from the mean of AM group.
+<center>_(Page 4)_</center>
+
+****
